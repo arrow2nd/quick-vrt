@@ -1,0 +1,32 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "quick-vrt": "./quick-vrt.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arrow2nd/quick-vrt.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/arrow2nd/quick-vrt/issues"
+  },
+  "homepage": "https://github.com/arrow2nd/quick-vrt#readme",
+  "dependencies": {
+    "commander": "^14.0.0",
+    "fs-extra": "^11.3.0",
+    "mochawesome": "^7.1.3",
+    "pixelmatch": "^7.1.0",
+    "playwright": "^1.52.0",
+    "pngjs": "^7.0.0",
+    "uuid": "^10.0.0"
+  }
+}
