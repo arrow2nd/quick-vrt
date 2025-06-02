@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name('quick-vrt')
   .description('Quick Visual Regression Testing tool for web pages')
-  .version('1.1.0')
+  .version('1.1.1')
   .argument('<urls...>', 'URLs to compare (format: url1 url2 [url3 url4 ...])')
   .option('-o, --output <dir>', 'output directory', './vrt-results')
   .option('--width <number>', 'viewport width', '1280')
