@@ -1,6 +1,6 @@
 {
   "name": "quick-vrt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Quick Visual Regression Testing tool for web pages",
   "main": "index.js",
   "bin": {
