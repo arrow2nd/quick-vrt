@@ -27,6 +27,7 @@ program
   .option('--no-disable-animations', 'keep CSS animations and transitions enabled')
   .option('--no-mask-videos', 'disable automatic video masking')
   .option('--video-mask-color <color>', 'color for video masks', '#808080')
+  .option('--user-agent <string>', 'custom user agent string')
   .option('--no-open', 'do not auto-open the report')
   .action(async (urls, options) => {
     if (urls.length < 2 || urls.length % 2 !== 0) {
@@ -260,105 +261,312 @@ async function maskVideos(page, maskColor = '#808080') {
         createMask(video, `VIDEO ${index + 1}`);
       });
       
-      // Mask potentially video-containing iframes (YouTube, Vimeo, etc.)
+      // Mask potentially video-containing iframes
       iframes.forEach((iframe, index) => {
-        const src = iframe.src.toLowerCase();
-        if (src.includes('youtube') || 
-            src.includes('vimeo') || 
-            src.includes('dailymotion') ||
-            src.includes('twitch') ||
-            src.includes('embed') ||
-            iframe.title.toLowerCase().includes('video')) {
-          createMask(iframe, `IFRAME ${index + 1}`);
+        const src = (iframe.src || '').toLowerCase();
+        const title = (iframe.title || '').toLowerCase();
+        const className = (iframe.className || '').toLowerCase();
+        
+        // Auto-detect video-related iframes
+        const isVideoIframe = src.includes('youtube') || 
+                             src.includes('vimeo') || 
+                             src.includes('dailymotion') ||
+                             src.includes('twitch') ||
+                             src.includes('wistia') ||
+                             src.includes('jwplayer') ||
+                             src.includes('brightcove') ||
+                             src.includes('embed') ||
+                             title.includes('video') ||
+                             title.includes('player') ||
+                             className.includes('video') ||
+                             className.includes('player');
+                             
+        if (isVideoIframe) {
+          createMask(iframe, `VIDEO IFRAME ${index + 1}`);
         }
       });
       
-      // Also mask elements with background videos
-      const elementsWithBgVideo = document.querySelectorAll('[style*="background"]');
-      elementsWithBgVideo.forEach((element, index) => {
+      // Auto-detect and mask elements with background videos
+      const allElements = document.querySelectorAll('*');
+      let bgVideoCount = 0;
+      
+      allElements.forEach((element) => {
         const style = window.getComputedStyle(element);
-        const bgImage = style.backgroundImage;
-        if (bgImage && (bgImage.includes('.mp4') || bgImage.includes('.webm') || bgImage.includes('.mov'))) {
-          createMask(element, `BG VIDEO ${index + 1}`);
+        const bgImage = style.backgroundImage || '';
+        const elementStyle = element.getAttribute('style') || '';
+        
+        // Check for video file extensions in background
+        const hasVideoBackground = bgImage.includes('.mp4') || 
+                                  bgImage.includes('.webm') || 
+                                  bgImage.includes('.mov') ||
+                                  bgImage.includes('.avi') ||
+                                  bgImage.includes('.mkv') ||
+                                  elementStyle.includes('.mp4') ||
+                                  elementStyle.includes('.webm') ||
+                                  elementStyle.includes('.mov');
+        
+        if (hasVideoBackground) {
+          createMask(element, `BG VIDEO ${++bgVideoCount}`);
         }
+      });
+      
+      // Auto-detect canvas elements that might contain video
+      const canvases = document.querySelectorAll('canvas');
+      canvases.forEach((canvas, index) => {
+        // Check if canvas is being updated frequently (likely video)
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 100 && rect.height > 100) { // Only mask significant canvases
+          const className = (canvas.className || '').toLowerCase();
+          const id = (canvas.id || '').toLowerCase();
+          
+          if (className.includes('video') || 
+              className.includes('player') ||
+              id.includes('video') ||
+              id.includes('player')) {
+            createMask(canvas, `CANVAS VIDEO ${index + 1}`);
+          }
+        }
+      });
+      
+      // Auto-detect WebGL/video-related elements
+      const webglElements = document.querySelectorAll('[data-video], [data-player], .video-player, .media-player');
+      webglElements.forEach((element, index) => {
+        createMask(element, `MEDIA ELEMENT ${index + 1}`);
+      });
+      
+      // Auto-detect common video player class names
+      const videoPlayerSelectors = [
+        '.video-js', '.vjs-tech', '.plyr', '.jwplayer', '.fp-player',
+        '.flowplayer', '.mediaelement', '.mejs-container', '.video-react-video',
+        '.react-player', '.shaka-video-container', '.videojs-player'
+      ];
+      
+      videoPlayerSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach((element, index) => {
+          createMask(element, `PLAYER ${index + 1}`);
+        });
       });
       
     }, maskColor);
     
-    // Wait a moment for masks to be applied
+    // Wait for masks to be properly applied
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log('    Videos masked');
+    console.log('    Dynamic content auto-masked');
     
   } catch (error) {
-    console.warn('    Failed to mask videos:', error.message);
+    console.warn('    Failed to mask dynamic content:', error.message);
   }
 }
 
 async function disableAnimations(page) {
   try {
+    // First, disable CSS animations and transitions
     await page.addStyleTag({
       content: `
+        /* Disable all CSS animations and transitions */
         *, *::before, *::after {
           animation-duration: 0s !important;
           animation-delay: 0s !important;
           animation-iteration-count: 1 !important;
+          animation-fill-mode: both !important;
           transition-duration: 0s !important;
           transition-delay: 0s !important;
+          transition-property: none !important;
           transform-origin: center !important;
         }
         
-        /* Stop CSS keyframe animations */
+        /* Force stop all animations */
         * {
           animation-play-state: paused !important;
+          animation: none !important;
+          transition: none !important;
         }
         
         /* Disable smooth scrolling */
-        html {
+        html, * {
           scroll-behavior: auto !important;
         }
         
-        /* Stop video autoplay */
-        video {
+        /* Stop video autoplay and controls */
+        video, audio {
           autoplay: false !important;
+          preload: none !important;
         }
         
-        /* Disable CSS transforms that might be mid-animation */
-        *[style*="transform"] {
+        /* Reset transforms that might be mid-animation */
+        *[style*="transform"], *[class*="animate"], *[class*="transition"] {
           transform: none !important;
+          animation: none !important;
+          transition: none !important;
+        }
+        
+        /* Common animation libraries */
+        .animate__animated, [class*="animate-"], [class*="fade"], [class*="slide"], 
+        [class*="bounce"], [class*="zoom"], [class*="rotate"], [class*="flip"] {
+          animation: none !important;
+          transition: none !important;
+          transform: none !important;
+        }
+        
+        /* CSS frameworks animations */
+        .animated, .animation, .aos-animate, .wow, .reveal, .motion, 
+        .gsap, .tween, .velocity-animating {
+          animation: none !important;
+          transition: none !important;
+          transform: none !important;
+        }
+        
+        /* Loading spinners and progress bars */
+        .spinner, .loader, .loading, .progress, [class*="spin"], [class*="pulse"] {
+          animation: none !important;
+          transform: none !important;
+        }
+        
+        /* Hover and focus effects */
+        *:hover, *:focus, *:active {
+          transition: none !important;
+          animation: none !important;
         }
       `
     });
     
-    // Also disable JavaScript-based animations by overriding common methods
+    // Wait for CSS to be properly applied
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Disable JavaScript-based animations
     await page.evaluate(() => {
-      // Override requestAnimationFrame to execute immediately
-      window.requestAnimationFrame = (callback) => {
-        return setTimeout(callback, 0);
-      };
-      
-      // Override setTimeout/setInterval for very short delays (likely animations)
+      // Store original functions
+      const originalRAF = window.requestAnimationFrame;
+      const originalCAF = window.cancelAnimationFrame;
       const originalSetTimeout = window.setTimeout;
       const originalSetInterval = window.setInterval;
+      const originalClearTimeout = window.clearTimeout;
+      const originalClearInterval = window.clearInterval;
       
-      window.setTimeout = (callback, delay) => {
-        if (delay < 100) delay = 0; // Make short delays immediate
-        return originalSetTimeout(callback, delay);
+      // Override requestAnimationFrame to execute immediately
+      window.requestAnimationFrame = (callback) => {
+        return originalSetTimeout(callback, 0);
       };
       
-      window.setInterval = (callback, delay) => {
-        if (delay < 100) delay = 1000; // Slow down frequent intervals
-        return originalSetInterval(callback, delay);
+      window.cancelAnimationFrame = (id) => {
+        return originalClearTimeout(id);
       };
       
-      // Stop any currently running animations
-      document.getAnimations?.().forEach(anim => {
-        anim.pause();
-        anim.currentTime = anim.effect?.getTiming?.().duration || 0;
+      // Override setTimeout/setInterval for animation-like delays
+      window.setTimeout = (callback, delay, ...args) => {
+        // Make very short delays (likely animations) immediate
+        if (delay < 100) delay = 0;
+        return originalSetTimeout(callback, delay, ...args);
+      };
+      
+      window.setInterval = (callback, delay, ...args) => {
+        // Slow down frequent intervals (likely animations)
+        if (delay < 100) delay = 10000; // Very slow
+        return originalSetInterval(callback, delay, ...args);
+      };
+      
+      // Stop Web Animations API
+      if (document.getAnimations) {
+        try {
+          document.getAnimations().forEach(animation => {
+            animation.pause();
+            // Set to final state
+            if (animation.effect && animation.effect.getTiming) {
+              const timing = animation.effect.getTiming();
+              animation.currentTime = timing.duration || 0;
+            }
+          });
+        } catch (e) {
+          console.warn('Could not stop Web Animations:', e);
+        }
+      }
+      
+      // Disable common animation libraries
+      // jQuery animations
+      if (window.jQuery || window.$) {
+        const $ = window.jQuery || window.$;
+        if ($.fx) {
+          $.fx.off = true;
+          $.fx.interval = 10000;
+        }
+      }
+      
+      // GSAP
+      if (window.gsap) {
+        try {
+          window.gsap.globalTimeline.pause();
+          window.gsap.set('*', { clearProps: 'all' });
+        } catch (e) {
+          console.warn('Could not disable GSAP:', e);
+        }
+      }
+      
+      // Anime.js
+      if (window.anime) {
+        try {
+          window.anime.suspendWhenDocumentHidden = false;
+          // Pause all running animations
+          if (window.anime.running) {
+            window.anime.running.forEach(anim => anim.pause());
+          }
+        } catch (e) {
+          console.warn('Could not disable Anime.js:', e);
+        }
+      }
+      
+      // Three.js
+      if (window.THREE) {
+        try {
+          // Stop render loops by overriding requestAnimationFrame for Three.js
+          const originalTHREERAF = window.THREE.DefaultLoadingManager.onProgress;
+        } catch (e) {
+          console.warn('Could not disable Three.js:', e);
+        }
+      }
+      
+      // Velocity.js
+      if (window.Velocity) {
+        try {
+          window.Velocity.mock = true;
+        } catch (e) {
+          console.warn('Could not disable Velocity.js:', e);
+        }
+      }
+      
+      // AOS (Animate On Scroll)
+      if (window.AOS) {
+        try {
+          window.AOS.refresh = () => {};
+          window.AOS.refreshHard = () => {};
+        } catch (e) {
+          console.warn('Could not disable AOS:', e);
+        }
+      }
+      
+      // Disable CSS animation events
+      const animationEvents = [
+        'animationstart', 'animationend', 'animationiteration',
+        'transitionstart', 'transitionend', 'transitioncancel'
+      ];
+      
+      animationEvents.forEach(event => {
+        document.addEventListener(event, (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }, true);
       });
+      
+      // Force layout recalculation to apply changes
+      document.body.offsetHeight;
+      
     });
     
-    console.log('    Animations disabled');
+    // Wait for all animation changes to take effect
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    console.log('    All animations disabled');
     
   } catch (error) {
     console.warn('    Failed to disable animations:', error.message);
@@ -367,69 +575,196 @@ async function disableAnimations(page) {
 
 async function triggerLazyLoading(page, scrollDelay = 500) {
   try {
-    // Get initial page dimensions
-    let previousHeight = 0;
+    console.log('    Triggering optimized lazy loading...');
+    const startTime = Date.now();
+    
+    // Use more conservative scroll delay for stability
+    const stableScrollDelay = Math.max(scrollDelay, 300); // Minimum 300ms for stability
+    
+    // First, trigger all lazy loading mechanisms
+    await page.evaluate(() => {
+      // Immediately trigger all lazy loading attributes
+      const lazySelectors = [
+        'img[data-src]', 'img[data-srcset]', 'img[loading="lazy"]',
+        'picture[data-src]', 'source[data-srcset]',
+        '[data-bg]', '[data-background]', '[data-background-image]',
+        '.lazy', '.lazyload', '.lazy-load', '.b-lazy',
+        '[class*="lazy"]', '[id*="lazy"]'
+      ];
+      
+      // Force load all lazy elements immediately
+      lazySelectors.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => {
+          if (el.dataset.src && !el.src) {
+            el.src = el.dataset.src;
+            el.removeAttribute('data-src');
+          }
+          if (el.dataset.srcset && !el.srcset) {
+            el.srcset = el.dataset.srcset;
+            el.removeAttribute('data-srcset');
+          }
+          if (el.loading === 'lazy') {
+            el.loading = 'eager';
+          }
+          
+          // Trigger background images
+          const bgSrc = el.dataset.bg || el.dataset.background || el.dataset.backgroundImage;
+          if (bgSrc) {
+            el.style.backgroundImage = `url(${bgSrc})`;
+          }
+        });
+      });
+      
+      // Fire all lazy loading events immediately
+      const events = ['lazyload', 'lazy:load', 'reveal', 'unveil', 'appear', 'inview', 
+                     'scroll', 'resize', 'DOMContentLoaded', 'load', 'focus'];
+      events.forEach(eventName => {
+        try {
+          document.dispatchEvent(new CustomEvent(eventName));
+          window.dispatchEvent(new CustomEvent(eventName));
+        } catch (e) {
+          // Ignore event errors
+        }
+      });
+    });
+    
+    // Wait for initial triggers to take effect
+    await new Promise(resolve => setTimeout(resolve, stableScrollDelay / 2));
+    
+    // Get page dimensions
     let currentHeight = await page.evaluate(() => document.body.scrollHeight);
     const viewportHeight = await page.evaluate(() => window.innerHeight);
-    const scrollStep = Math.floor(viewportHeight * 0.8);
+    const scrollStep = Math.floor(viewportHeight * 0.8); // Larger steps for speed
     
+    console.log(`    Fast scrolling through page (height: ${currentHeight}px)...`);
+    
+    // Stable scrolling with reasonable termination
     let position = 0;
-    let stableCount = 0;
-    const maxStableCount = 3; // Stop if height doesn't change for 3 consecutive checks
+    let unchangedCount = 0;
+    const maxUnchangedCount = 3; // More patient for stability
+    const maxScrollTime = 15000; // 15 second timeout for scrolling
     
-    console.log(`    Triggering lazy loading (page height: ${currentHeight}px)...`);
-    
-    while (stableCount < maxStableCount && position < currentHeight) {
-      // Scroll to position
+    while (position < currentHeight && unchangedCount < maxUnchangedCount && 
+           (Date.now() - startTime) < maxScrollTime) {
+      
+      const previousHeight = currentHeight;
+      
+      // Fast scroll to position
       await page.evaluate((pos) => {
-        window.scrollTo(0, pos);
+        window.scrollTo({ top: pos, behavior: 'auto' });
+        
+        // Immediate trigger of lazy elements in viewport
+        const potentialLazyElements = document.querySelectorAll(
+          'img[loading="lazy"], [data-src], [data-srcset], .lazy, .lazyload, [class*="lazy"]'
+        );
+        
+        potentialLazyElements.forEach(el => {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < window.innerHeight + 500) { // Larger buffer
+            if (el.dataset.src && !el.src) {
+              el.src = el.dataset.src;
+            }
+            if (el.dataset.srcset && !el.srcset) {
+              el.srcset = el.dataset.srcset;
+            }
+            if (el.loading === 'lazy') {
+              el.loading = 'eager';
+            }
+          }
+        });
+        
+        // Trigger scroll events
+        window.dispatchEvent(new Event('scroll'));
       }, position);
       
-      // Wait for content to potentially load
-      await new Promise(resolve => setTimeout(resolve, scrollDelay));
+      // Stable wait time
+      await new Promise(resolve => setTimeout(resolve, stableScrollDelay / 2));
       
       // Check for height changes
-      previousHeight = currentHeight;
       currentHeight = await page.evaluate(() => document.body.scrollHeight);
       
       if (currentHeight > previousHeight) {
-        console.log(`    Content loaded, new height: ${currentHeight}px`);
-        stableCount = 0; // Reset counter when new content loads
+        console.log(`    Content loaded, height: ${currentHeight}px`);
+        unchangedCount = 0;
       } else {
-        stableCount++;
+        unchangedCount++;
       }
       
       position += scrollStep;
     }
     
-    // Force trigger intersection observer events for any remaining lazy images
+    // Quick final scroll to bottom and back
     await page.evaluate(() => {
-      // Trigger intersection observer by scrolling to bottom and back
-      window.scrollTo(0, document.body.scrollHeight);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'auto' });
+      window.dispatchEvent(new Event('scroll'));
     });
-    await new Promise(resolve => setTimeout(resolve, scrollDelay));
+    await new Promise(resolve => setTimeout(resolve, stableScrollDelay / 2));
     
-    // Scroll back to top for screenshot
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await new Promise(resolve => setTimeout(resolve, scrollDelay / 2));
-    
-    // Wait for images to complete loading
     await page.evaluate(() => {
-      return Promise.all(
-        Array.from(document.images)
-          .filter(img => !img.complete)
-          .map(img => new Promise(resolve => {
-            img.onload = img.onerror = resolve;
-            // Fallback timeout for stubborn images
-            setTimeout(resolve, 3000);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      
+      // Final aggressive loading attempt
+      document.querySelectorAll('img').forEach(img => {
+        if (img.dataset.src && !img.src) {
+          img.src = img.dataset.src;
+        }
+        if (img.dataset.srcset && !img.srcset) {
+          img.srcset = img.dataset.srcset;
+        }
+        if (img.loading === 'lazy') {
+          img.loading = 'eager';
+        }
+      });
+    });
+    
+    // Stable image loading with reasonable timeout
+    const imageLoadTimeout = Math.min(3000, scrollDelay * 3); // Max 3 seconds, more stable
+    
+    await page.evaluate((timeout) => {
+      const images = Array.from(document.images).filter(img => !img.complete || !img.naturalWidth);
+      
+      if (images.length === 0) return Promise.resolve();
+      
+      console.log(`Waiting for ${images.length} images to load...`);
+      
+      return Promise.race([
+        // Race between image loading and timeout
+        Promise.all(
+          images.slice(0, 30).map(img => new Promise(resolve => { // Increased to 30 images for completeness
+            if (img.complete && img.naturalWidth) {
+              resolve();
+              return;
+            }
+            
+            const quickTimeout = setTimeout(resolve, timeout);
+            
+            img.onload = () => {
+              clearTimeout(quickTimeout);
+              resolve();
+            };
+            
+            img.onerror = () => {
+              clearTimeout(quickTimeout);
+              resolve();
+            };
+            
+            // Force loading
+            if (!img.src && img.dataset.src) {
+              img.src = img.dataset.src;
+            }
           }))
-      );
-    });
+        ),
+        // Global timeout
+        new Promise(resolve => setTimeout(resolve, timeout))
+      ]);
+    }, imageLoadTimeout);
     
-    console.log(`    Lazy loading complete (final height: ${currentHeight}px)`);
+    const totalTime = Date.now() - startTime;
+    const finalHeight = await page.evaluate(() => document.body.scrollHeight);
+    console.log(`    Lazy loading complete in ${totalTime}ms (final height: ${finalHeight}px)`);
     
   } catch (error) {
-    console.warn('    Lazy loading trigger failed:', error.message);
+    console.warn('    Optimized lazy loading failed:', error.message);
   }
 }
 
@@ -459,44 +794,56 @@ async function runVRT(urlPairs, options) {
 
         try {
           const page = await browser.newPage();
+          
+          // Set appropriate User-Agent
+          const userAgent = options.userAgent || 
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          await page.setUserAgent(userAgent);
+          
+          // Optimize page settings for speed
           await page.setViewport({
             width: parseInt(options.width),
             height: parseInt(options.height)
           });
+          
+          // Set stable timeouts
+          page.setDefaultTimeout(45000); // 45 second timeout for stability
+          page.setDefaultNavigationTimeout(45000);
+          
+          // Shared processing function to avoid code duplication
+          const processPage = async (url, imagePath) => {
+            await page.goto(url, { 
+              waitUntil: 'networkidle0', // Back to networkidle0 for stability
+              timeout: 45000 // Increased timeout for stability
+            });
+            
+            // Sequential processing for more stability
+            if (options.disableAnimations !== false) {
+              await disableAnimations(page);
+            }
+            
+            if (options.lazyLoading !== false) {
+              await triggerLazyLoading(page, parseInt(options.scrollDelay));
+            }
+            
+            if (options.maskVideos !== false) {
+              await maskVideos(page, options.videoMaskColor);
+            }
+            
+            // Take screenshot with longer timeout
+            await page.screenshot({ 
+              path: imagePath, 
+              fullPage: true,
+              timeout: 30000 // Increased screenshot timeout
+            });
+          };
 
-          // Take screenshot of before URL
-          await page.goto(pair.before, { waitUntil: 'networkidle0' });
-          if (options.disableAnimations !== false) {
-            await disableAnimations(page);
-          }
-          if (options.lazyLoading !== false) {
-            await triggerLazyLoading(page, parseInt(options.scrollDelay));
-          }
-          if (options.maskVideos !== false) {
-            await maskVideos(page, options.videoMaskColor);
-          }
+          // Process both URLs
           const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
-          await page.screenshot({ 
-            path: beforePath, 
-            fullPage: true 
-          });
-
-          // Take screenshot of after URL
-          await page.goto(pair.after, { waitUntil: 'networkidle0' });
-          if (options.disableAnimations !== false) {
-            await disableAnimations(page);
-          }
-          if (options.lazyLoading !== false) {
-            await triggerLazyLoading(page, parseInt(options.scrollDelay));
-          }
-          if (options.maskVideos !== false) {
-            await maskVideos(page, options.videoMaskColor);
-          }
+          await processPage(pair.before, beforePath);
+          
           const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
-          await page.screenshot({ 
-            path: afterPath, 
-            fullPage: true 
-          });
+          await processPage(pair.after, afterPath);
 
           await page.close();
 
