@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name('quick-vrt')
   .description('Quick Visual Regression Testing tool for web pages')
-  .version('1.1.1');
+  .version('1.2.0');
 
 // Main command for running VRT
 program
