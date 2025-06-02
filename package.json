@@ -12,18 +12,18 @@
   "keywords": [
     "vrt",
     "visual-regression-testing",
-    "playwright",
+    "puppeteer",
     "screenshot",
     "diff"
   ],
   "author": "arrow2nd",
   "license": "MIT",
   "dependencies": {
-    "playwright": "^1.40.0",
+    "commander": "^11.1.0",
+    "open": "^9.1.0",
     "pixelmatch": "^5.3.0",
     "pngjs": "^7.0.0",
-    "commander": "^11.1.0",
-    "open": "^9.1.0"
+    "puppeteer": "^24.10.0"
   },
   "engines": {
     "node": ">=16.0.0"

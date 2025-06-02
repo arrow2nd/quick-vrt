@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
-const { chromium } = require('playwright');
+const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
 const pixelmatch = require('pixelmatch');
 const { PNG } = require('pngjs');
+const os = require('os');
 
 const program = new Command();
 
@@ -17,6 +18,7 @@ program
   .option('-o, --output <dir>', 'output directory', './vrt-results')
   .option('--width <number>', 'viewport width', '1280')
   .option('--height <number>', 'viewport height', '720')
+  .option('--concurrency <number>', 'max concurrent browsers', Math.max(1, Math.floor(os.cpus().length / 2)).toString())
   .option('--no-open', 'do not auto-open the report')
   .action(async (urls, options) => {
     if (urls.length < 2 || urls.length % 2 !== 0) {
@@ -43,67 +45,71 @@ async function runVRT(urlPairs, options) {
 
   console.log('Starting Visual Regression Testing...');
   
-  const browser = await chromium.launch();
-  const context = await browser.newContext({
-    viewport: {
-      width: parseInt(options.width),
-      height: parseInt(options.height)
-    }
-  });
+  const browser = await puppeteer.launch();
+  const maxConcurrency = parseInt(options.concurrency);
 
+  // Process pairs with limited concurrency
   const results = [];
+  for (let i = 0; i < urlPairs.length; i += maxConcurrency) {
+    const batch = urlPairs.slice(i, i + maxConcurrency);
+    const batchResults = await Promise.all(
+      batch.map(async (pair, batchIndex) => {
+        const pairIndex = i + batchIndex;
+        const pairId = `pair-${pairIndex + 1}`;
+        console.log(`Comparing ${pair.before} vs ${pair.after}...`);
 
-  for (let i = 0; i < urlPairs.length; i++) {
-    const pair = urlPairs[i];
-    const pairId = `pair-${i + 1}`;
-    
-    console.log(`Comparing ${pair.before} vs ${pair.after}...`);
+        try {
+          const page = await browser.newPage();
+          await page.setViewport({
+            width: parseInt(options.width),
+            height: parseInt(options.height)
+          });
 
-    try {
-      const page = await context.newPage();
-      
-      // Take screenshot of before URL
-      await page.goto(pair.before, { waitUntil: 'networkidle' });
-      const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
-      await page.screenshot({ 
-        path: beforePath, 
-        fullPage: true 
-      });
+          // Take screenshot of before URL
+          await page.goto(pair.before, { waitUntil: 'networkidle0' });
+          const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
+          await page.screenshot({ 
+            path: beforePath, 
+            fullPage: true 
+          });
 
-      // Take screenshot of after URL
-      await page.goto(pair.after, { waitUntil: 'networkidle' });
-      const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
-      await page.screenshot({ 
-        path: afterPath, 
-        fullPage: true 
-      });
+          // Take screenshot of after URL
+          await page.goto(pair.after, { waitUntil: 'networkidle0' });
+          const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
+          await page.screenshot({ 
+            path: afterPath, 
+            fullPage: true 
+          });
 
-      await page.close();
+          await page.close();
 
-      // Generate diff
-      const diffPath = path.join(diffsDir, `${pairId}-diff.png`);
-      const diffResult = await generateDiff(beforePath, afterPath, diffPath);
+          // Generate diff
+          const diffPath = path.join(diffsDir, `${pairId}-diff.png`);
+          const diffResult = await generateDiff(beforePath, afterPath, diffPath);
 
-      results.push({
-        id: pairId,
-        beforeUrl: pair.before,
-        afterUrl: pair.after,
-        beforeImage: path.relative(outputDir, beforePath),
-        afterImage: path.relative(outputDir, afterPath),
-        diffImage: path.relative(outputDir, diffPath),
-        pixelDiff: diffResult.pixelDiff,
-        diffPercentage: diffResult.diffPercentage
-      });
+          return {
+            id: pairId,
+            beforeUrl: pair.before,
+            afterUrl: pair.after,
+            beforeImage: path.relative(outputDir, beforePath),
+            afterImage: path.relative(outputDir, afterPath),
+            diffImage: path.relative(outputDir, diffPath),
+            pixelDiff: diffResult.pixelDiff,
+            diffPercentage: diffResult.diffPercentage
+          };
 
-    } catch (error) {
-      console.error(`Error processing pair ${i + 1}:`, error.message);
-      results.push({
-        id: pairId,
-        beforeUrl: pair.before,
-        afterUrl: pair.after,
-        error: error.message
-      });
-    }
+        } catch (error) {
+          console.error(`Error processing pair ${pairIndex + 1}:`, error.message);
+          return {
+            id: pairId,
+            beforeUrl: pair.before,
+            afterUrl: pair.after,
+            error: error.message
+          };
+        }
+      })
+    );
+    results.push(...batchResults);
   }
 
   await browser.close();
