@@ -13,12 +13,20 @@ const program = new Command();
 program
   .name('quick-vrt')
   .description('Quick Visual Regression Testing tool for web pages')
-  .version('1.1.1')
+  .version('1.1.1');
+
+// Main command for running VRT
+program
   .argument('<urls...>', 'URLs to compare (format: url1 url2 [url3 url4 ...])')
   .option('-o, --output <dir>', 'output directory', './vrt-results')
   .option('--width <number>', 'viewport width', '1280')
   .option('--height <number>', 'viewport height', '720')
   .option('--concurrency <number>', 'max concurrent browsers', Math.max(1, Math.floor(os.cpus().length / 2)).toString())
+  .option('--scroll-delay <number>', 'delay between scroll steps (ms)', '500')
+  .option('--no-lazy-loading', 'disable lazy loading support')
+  .option('--no-disable-animations', 'keep CSS animations and transitions enabled')
+  .option('--no-mask-videos', 'disable automatic video masking')
+  .option('--video-mask-color <color>', 'color for video masks', '#808080')
   .option('--no-open', 'do not auto-open the report')
   .action(async (urls, options) => {
     if (urls.length < 2 || urls.length % 2 !== 0) {
@@ -33,6 +41,397 @@ program
 
     await runVRT(pairs, options);
   });
+
+// Open command for viewing existing reports
+program
+  .command('open')
+  .description('Open an existing test report')
+  .argument('[path]', 'path to report.html or results directory', './vrt-results')
+  .option('-l, --list', 'list recent reports instead of opening')
+  .action(async (reportPath, options) => {
+    if (options.list) {
+      await listReports();
+    } else {
+      await openReport(reportPath);
+    }
+  });
+
+async function listReports() {
+  try {
+    console.log('Searching for recent VRT reports...\n');
+    
+    // Common locations to search for reports
+    const searchPaths = [
+      './vrt-results',
+      './test-results',
+      './screenshots',
+      './visual-regression',
+      '.'
+    ];
+    
+    const reports = [];
+    
+    for (const searchPath of searchPaths) {
+      try {
+        const dirExists = await fs.access(searchPath).then(() => true).catch(() => false);
+        if (!dirExists) continue;
+        
+        const entries = await fs.readdir(searchPath, { withFileTypes: true });
+        
+        for (const entry of entries) {
+          if (entry.isDirectory() && entry.name.includes('vrt')) {
+            // Check if this directory contains a report.html
+            const reportPath = path.join(searchPath, entry.name, 'report.html');
+            const reportExists = await fs.access(reportPath).then(() => true).catch(() => false);
+            
+            if (reportExists) {
+              const stats = await fs.stat(reportPath);
+              reports.push({
+                path: path.resolve(reportPath),
+                dir: path.resolve(searchPath, entry.name),
+                modified: stats.mtime,
+                size: stats.size
+              });
+            }
+          } else if (entry.isFile() && entry.name === 'report.html') {
+            // Direct report.html file
+            const reportPath = path.join(searchPath, entry.name);
+            const stats = await fs.stat(reportPath);
+            reports.push({
+              path: path.resolve(reportPath),
+              dir: path.resolve(searchPath),
+              modified: stats.mtime,
+              size: stats.size
+            });
+          }
+        }
+      } catch (error) {
+        // Ignore errors for individual paths
+      }
+    }
+    
+    if (reports.length === 0) {
+      console.log('No VRT reports found.');
+      console.log('Run a VRT test first with: quick-vrt <url1> <url2>');
+      return;
+    }
+    
+    // Sort by modification time (newest first)
+    reports.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+    
+    console.log('Found reports:');
+    console.log('─'.repeat(80));
+    
+    reports.slice(0, 10).forEach((report, index) => {
+      const relativeDir = path.relative(process.cwd(), report.dir);
+      const timeAgo = getTimeAgo(report.modified);
+      const sizeMB = (report.size / (1024 * 1024)).toFixed(2);
+      
+      console.log(`${(index + 1).toString().padStart(2)}. ${relativeDir}`);
+      console.log(`    Modified: ${timeAgo} (${sizeMB} MB)`);
+      console.log(`    Command:  quick-vrt open "${relativeDir}"`);
+      console.log('');
+    });
+    
+    if (reports.length > 10) {
+      console.log(`... and ${reports.length - 10} more reports`);
+    }
+    
+  } catch (error) {
+    console.error('Error listing reports:', error.message);
+  }
+}
+
+function getTimeAgo(date) {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffDays > 0) {
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  } else if (diffHours > 0) {
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  } else if (diffMinutes > 0) {
+    return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+  } else {
+    return 'just now';
+  }
+}
+
+async function openReport(reportPath) {
+  try {
+    let fullPath;
+    
+    // Check if the path is a directory or a file
+    const stats = await fs.stat(reportPath).catch(() => null);
+    
+    if (stats && stats.isDirectory()) {
+      // If it's a directory, look for report.html inside
+      fullPath = path.join(reportPath, 'report.html');
+    } else if (stats && stats.isFile()) {
+      // If it's a file, use it directly
+      fullPath = reportPath;
+    } else {
+      // If path doesn't exist, try to construct the report.html path
+      fullPath = path.join(reportPath, 'report.html');
+    }
+    
+    // Check if the report file exists
+    const reportExists = await fs.access(fullPath).then(() => true).catch(() => false);
+    
+    if (!reportExists) {
+      console.error(`Error: Report not found at ${fullPath}`);
+      console.log('Make sure you have run a VRT test or provide the correct path to an existing report.');
+      process.exit(1);
+    }
+    
+    console.log(`Opening report: ${fullPath}`);
+    
+    // Open the report
+    const { default: open } = await import('open');
+    await open(path.resolve(fullPath));
+    
+  } catch (error) {
+    console.error('Error opening report:', error.message);
+    process.exit(1);
+  }
+}
+
+async function maskVideos(page, maskColor = '#808080') {
+  try {
+    await page.evaluate((color) => {
+      // Find all video elements
+      const videos = document.querySelectorAll('video');
+      const iframes = document.querySelectorAll('iframe');
+      
+      // Function to create a mask overlay
+      function createMask(element, label) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        
+        const mask = document.createElement('div');
+        mask.style.cssText = `
+          position: fixed !important;
+          top: ${rect.top + window.scrollY}px !important;
+          left: ${rect.left + window.scrollX}px !important;
+          width: ${rect.width}px !important;
+          height: ${rect.height}px !important;
+          background-color: ${color} !important;
+          z-index: 999999 !important;
+          pointer-events: none !important;
+          border-radius: ${window.getComputedStyle(element).borderRadius} !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          font-family: Arial, sans-serif !important;
+          font-size: 14px !important;
+          color: white !important;
+          text-shadow: 1px 1px 2px rgba(0,0,0,0.5) !important;
+        `;
+        mask.textContent = `[${label} MASKED]`;
+        mask.setAttribute('data-vrt-mask', 'true');
+        
+        // Make sure the mask stays in place even with position changes
+        const observer = new MutationObserver(() => {
+          const newRect = element.getBoundingClientRect();
+          if (newRect.width > 0 && newRect.height > 0) {
+            mask.style.top = `${newRect.top + window.scrollY}px`;
+            mask.style.left = `${newRect.left + window.scrollX}px`;
+            mask.style.width = `${newRect.width}px`;
+            mask.style.height = `${newRect.height}px`;
+          }
+        });
+        
+        observer.observe(element, { 
+          attributes: true, 
+          attributeFilter: ['style', 'class'],
+          subtree: false 
+        });
+        
+        document.body.appendChild(mask);
+        return mask;
+      }
+      
+      // Mask video elements
+      videos.forEach((video, index) => {
+        createMask(video, `VIDEO ${index + 1}`);
+      });
+      
+      // Mask potentially video-containing iframes (YouTube, Vimeo, etc.)
+      iframes.forEach((iframe, index) => {
+        const src = iframe.src.toLowerCase();
+        if (src.includes('youtube') || 
+            src.includes('vimeo') || 
+            src.includes('dailymotion') ||
+            src.includes('twitch') ||
+            src.includes('embed') ||
+            iframe.title.toLowerCase().includes('video')) {
+          createMask(iframe, `IFRAME ${index + 1}`);
+        }
+      });
+      
+      // Also mask elements with background videos
+      const elementsWithBgVideo = document.querySelectorAll('[style*="background"]');
+      elementsWithBgVideo.forEach((element, index) => {
+        const style = window.getComputedStyle(element);
+        const bgImage = style.backgroundImage;
+        if (bgImage && (bgImage.includes('.mp4') || bgImage.includes('.webm') || bgImage.includes('.mov'))) {
+          createMask(element, `BG VIDEO ${index + 1}`);
+        }
+      });
+      
+    }, maskColor);
+    
+    // Wait a moment for masks to be applied
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    console.log('    Videos masked');
+    
+  } catch (error) {
+    console.warn('    Failed to mask videos:', error.message);
+  }
+}
+
+async function disableAnimations(page) {
+  try {
+    await page.addStyleTag({
+      content: `
+        *, *::before, *::after {
+          animation-duration: 0s !important;
+          animation-delay: 0s !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0s !important;
+          transition-delay: 0s !important;
+          transform-origin: center !important;
+        }
+        
+        /* Stop CSS keyframe animations */
+        * {
+          animation-play-state: paused !important;
+        }
+        
+        /* Disable smooth scrolling */
+        html {
+          scroll-behavior: auto !important;
+        }
+        
+        /* Stop video autoplay */
+        video {
+          autoplay: false !important;
+        }
+        
+        /* Disable CSS transforms that might be mid-animation */
+        *[style*="transform"] {
+          transform: none !important;
+        }
+      `
+    });
+    
+    // Also disable JavaScript-based animations by overriding common methods
+    await page.evaluate(() => {
+      // Override requestAnimationFrame to execute immediately
+      window.requestAnimationFrame = (callback) => {
+        return setTimeout(callback, 0);
+      };
+      
+      // Override setTimeout/setInterval for very short delays (likely animations)
+      const originalSetTimeout = window.setTimeout;
+      const originalSetInterval = window.setInterval;
+      
+      window.setTimeout = (callback, delay) => {
+        if (delay < 100) delay = 0; // Make short delays immediate
+        return originalSetTimeout(callback, delay);
+      };
+      
+      window.setInterval = (callback, delay) => {
+        if (delay < 100) delay = 1000; // Slow down frequent intervals
+        return originalSetInterval(callback, delay);
+      };
+      
+      // Stop any currently running animations
+      document.getAnimations?.().forEach(anim => {
+        anim.pause();
+        anim.currentTime = anim.effect?.getTiming?.().duration || 0;
+      });
+    });
+    
+    console.log('    Animations disabled');
+    
+  } catch (error) {
+    console.warn('    Failed to disable animations:', error.message);
+  }
+}
+
+async function triggerLazyLoading(page, scrollDelay = 500) {
+  try {
+    // Get initial page dimensions
+    let previousHeight = 0;
+    let currentHeight = await page.evaluate(() => document.body.scrollHeight);
+    const viewportHeight = await page.evaluate(() => window.innerHeight);
+    const scrollStep = Math.floor(viewportHeight * 0.8);
+    
+    let position = 0;
+    let stableCount = 0;
+    const maxStableCount = 3; // Stop if height doesn't change for 3 consecutive checks
+    
+    console.log(`    Triggering lazy loading (page height: ${currentHeight}px)...`);
+    
+    while (stableCount < maxStableCount && position < currentHeight) {
+      // Scroll to position
+      await page.evaluate((pos) => {
+        window.scrollTo(0, pos);
+      }, position);
+      
+      // Wait for content to potentially load
+      await new Promise(resolve => setTimeout(resolve, scrollDelay));
+      
+      // Check for height changes
+      previousHeight = currentHeight;
+      currentHeight = await page.evaluate(() => document.body.scrollHeight);
+      
+      if (currentHeight > previousHeight) {
+        console.log(`    Content loaded, new height: ${currentHeight}px`);
+        stableCount = 0; // Reset counter when new content loads
+      } else {
+        stableCount++;
+      }
+      
+      position += scrollStep;
+    }
+    
+    // Force trigger intersection observer events for any remaining lazy images
+    await page.evaluate(() => {
+      // Trigger intersection observer by scrolling to bottom and back
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, scrollDelay));
+    
+    // Scroll back to top for screenshot
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await new Promise(resolve => setTimeout(resolve, scrollDelay / 2));
+    
+    // Wait for images to complete loading
+    await page.evaluate(() => {
+      return Promise.all(
+        Array.from(document.images)
+          .filter(img => !img.complete)
+          .map(img => new Promise(resolve => {
+            img.onload = img.onerror = resolve;
+            // Fallback timeout for stubborn images
+            setTimeout(resolve, 3000);
+          }))
+      );
+    });
+    
+    console.log(`    Lazy loading complete (final height: ${currentHeight}px)`);
+    
+  } catch (error) {
+    console.warn('    Lazy loading trigger failed:', error.message);
+  }
+}
 
 async function runVRT(urlPairs, options) {
   const outputDir = path.resolve(options.output);
@@ -67,6 +466,15 @@ async function runVRT(urlPairs, options) {
 
           // Take screenshot of before URL
           await page.goto(pair.before, { waitUntil: 'networkidle0' });
+          if (options.disableAnimations !== false) {
+            await disableAnimations(page);
+          }
+          if (options.lazyLoading !== false) {
+            await triggerLazyLoading(page, parseInt(options.scrollDelay));
+          }
+          if (options.maskVideos !== false) {
+            await maskVideos(page, options.videoMaskColor);
+          }
           const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
           await page.screenshot({ 
             path: beforePath, 
@@ -75,6 +483,15 @@ async function runVRT(urlPairs, options) {
 
           // Take screenshot of after URL
           await page.goto(pair.after, { waitUntil: 'networkidle0' });
+          if (options.disableAnimations !== false) {
+            await disableAnimations(page);
+          }
+          if (options.lazyLoading !== false) {
+            await triggerLazyLoading(page, parseInt(options.scrollDelay));
+          }
+          if (options.maskVideos !== false) {
+            await maskVideos(page, options.videoMaskColor);
+          }
           const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
           await page.screenshot({ 
             path: afterPath, 
