@@ -7,13 +7,14 @@ const path = require("path");
 const pixelmatch = require("pixelmatch");
 const { PNG } = require("pngjs");
 const os = require("os");
+const { startTui } = require("./src/tui");
 
 const program = new Command();
 
 program
   .name("quick-vrt")
   .description("Quick Visual Regression Testing tool for web pages")
-  .version("1.3.0");
+  .version("1.4.0");
 
 // Main command for running VRT
 program
@@ -50,6 +51,50 @@ program
     }
 
     await runVRT(pairs, options);
+  });
+
+// TUI command for interactive URL selection
+program
+  .command("tui")
+  .description("Interactive URL selection with TUI")
+  .option("-o, --output <dir>", "output directory", "./vrt-results")
+  .option("--width <number>", "viewport width", "1280")
+  .option("--height <number>", "viewport height", "720")
+  .option(
+    "--concurrency <number>",
+    "max concurrent browsers",
+    Math.max(1, Math.floor(os.cpus().length / 2)).toString(),
+  )
+  .option("--scroll-delay <number>", "delay between scroll steps (ms)", "500")
+  .option("--no-lazy-loading", "disable lazy loading support")
+  .option(
+    "--no-disable-animations",
+    "keep CSS animations and transitions enabled",
+  )
+  .option("--no-mask-videos", "disable automatic video masking")
+  .option("--video-mask-color <color>", "color for video masks", "#808080")
+  .option("--user-agent <string>", "custom user agent string")
+  .option("--no-open", "do not auto-open the report")
+  .action(async (options) => {
+    try {
+      const urlPairs = await startTui();
+
+      if (urlPairs.length === 0) {
+        console.log("No URL pairs provided. Exiting.");
+        process.exit(0);
+      }
+
+      // Convert to the format expected by runVRT
+      const pairs = urlPairs.map((pair) => ({
+        before: pair.before,
+        after: pair.after,
+      }));
+
+      await runVRT(pairs, options);
+    } catch (error) {
+      console.error("Error running TUI:", error.message);
+      process.exit(1);
+    }
   });
 
 // Open command for viewing existing reports
@@ -653,13 +698,15 @@ async function scrollToBottom(page, viewportHeight, scrollDelay = 500) {
       (previousHeight) => {
         // Wait for either content to load or a reasonable timeout
         const currentHeight = document.documentElement.scrollHeight;
-        const hasNewImages = Array.from(document.images).some(img => !img.complete);
-        
+        const hasNewImages = Array.from(document.images).some((img) =>
+          !img.complete
+        );
+
         // Continue if height changed (new content) or no pending images
         return currentHeight > previousHeight || !hasNewImages;
       },
       { timeout: 1500 },
-      scrollHeight
+      scrollHeight,
     ).catch(() => {
       // Timeout is acceptable, continue scrolling
     });
@@ -868,204 +915,198 @@ async function runVRT(urlPairs, options) {
     "🔄 Overall Progress",
   );
 
-  // Process pairs with limited concurrency
+  // Process pairs sequentially to avoid resource conflicts and improve stability
   const results = [];
-  for (let i = 0; i < urlPairs.length; i += maxConcurrency) {
-    const batch = urlPairs.slice(i, i + maxConcurrency);
-    const batchResults = await Promise.all(
-      batch.map(async (pair, batchIndex) => {
-        const pairIndex = i + batchIndex;
-        const pairId = `pair-${pairIndex + 1}`;
+  for (let i = 0; i < urlPairs.length; i++) {
+    const pair = urlPairs[i];
+    const pairId = `pair-${i + 1}`;
+    console.log(
+      `\n🆚 ${formatPairLog(pairId, "diff", `Starting comparison`)}`,
+    );
+    console.log(`   Before: ${pair.before}`);
+    console.log(`   After:  ${pair.after}`);
+
+    try {
+      // Create single page for sequential processing (more stable)
+      const page = await browser.newPage();
+
+      // Set appropriate User-Agent
+      const userAgent = options.userAgent ||
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+      await page.setUserAgent(userAgent);
+
+      // Optimize page settings for speed
+      await page.setViewport({
+        width: parseInt(options.width),
+        height: parseInt(options.height),
+      });
+
+      // Set stable timeouts
+      page.setDefaultTimeout(45000);
+      page.setDefaultNavigationTimeout(45000);
+
+      // Shared processing function with enhanced logging
+      const processPage = async (url, imagePath, type) => {
+        console.log(formatPairLog(pairId, type, `Loading ${url}...`));
+        // Navigate with proper error handling
+        await page.goto(url, {
+          waitUntil: "networkidle2", // Use networkidle2 for better stability
+          timeout: 45000,
+        });
         console.log(
-          `\n🆚 ${formatPairLog(pairId, "diff", `Starting comparison`)}`,
+          formatPairLog(pairId, type, "Page loaded, stabilizing..."),
         );
-        console.log(`   Before: ${pair.before}`);
-        console.log(`   After:  ${pair.after}`);
 
-        try {
-          // Create single page for sequential processing (more stable)
-          const page = await browser.newPage();
+        // Quick initial stabilization
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-          // Set appropriate User-Agent
-          const userAgent = options.userAgent ||
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-          await page.setUserAgent(userAgent);
+        // Optimized sequential processing with progress logging
+        if (options.disableAnimations !== false) {
+          console.log(
+            formatPairLog(pairId, type, "Disabling animations..."),
+          );
+          await disableAnimations(page);
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
 
-          // Optimize page settings for speed
-          await page.setViewport({
-            width: parseInt(options.width),
-            height: parseInt(options.height),
+        if (options.lazyLoading !== false) {
+          console.log(
+            formatPairLog(pairId, type, "Triggering lazy loading..."),
+          );
+          await triggerLazyLoading(page, parseInt(options.scrollDelay));
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        }
+
+        if (options.maskVideos !== false) {
+          console.log(formatPairLog(pairId, type, "Masking videos..."));
+          await maskVideos(page, options.videoMaskColor);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+
+        // Final stabilization check
+        await page.evaluate(() => {
+          return new Promise((resolve) => {
+            let checkCount = 0;
+            const maxChecks = 10; // 3 seconds max
+
+            const checkStability = () => {
+              checkCount++;
+              const pendingImages = Array.from(document.images).filter(
+                (img) => !img.complete || img.naturalWidth === 0,
+              );
+
+              if (pendingImages.length === 0 || checkCount >= maxChecks) {
+                setTimeout(resolve, 300);
+              } else {
+                setTimeout(checkStability, 300);
+              }
+            };
+
+            setTimeout(checkStability, 200);
           });
+        });
 
-          // Set stable timeouts
-          page.setDefaultTimeout(45000);
-          page.setDefaultNavigationTimeout(45000);
-
-          // Shared processing function with enhanced logging
-          const processPage = async (url, imagePath, type) => {
-            console.log(formatPairLog(pairId, type, `Loading ${url}...`));
-            // Navigate with proper error handling
-            await page.goto(url, {
-              waitUntil: "networkidle2", // Use networkidle2 for better stability
-              timeout: 45000,
-            });
-            console.log(
-              formatPairLog(pairId, type, "Page loaded, stabilizing..."),
-            );
-
-            // Quick initial stabilization
-            await new Promise((resolve) => setTimeout(resolve, 500));
-
-            // Optimized sequential processing with progress logging
-            if (options.disableAnimations !== false) {
-              console.log(
-                formatPairLog(pairId, type, "Disabling animations..."),
-              );
-              await disableAnimations(page);
-              await new Promise((resolve) => setTimeout(resolve, 800));
-            }
-
-            if (options.lazyLoading !== false) {
-              console.log(
-                formatPairLog(pairId, type, "Triggering lazy loading..."),
-              );
-              await triggerLazyLoading(page, parseInt(options.scrollDelay));
-              await new Promise((resolve) => setTimeout(resolve, 600));
-            }
-
-            if (options.maskVideos !== false) {
-              console.log(formatPairLog(pairId, type, "Masking videos..."));
-              await maskVideos(page, options.videoMaskColor);
-              await new Promise((resolve) => setTimeout(resolve, 200));
-            }
-
-            // Final stabilization check
-            await page.evaluate(() => {
-              return new Promise((resolve) => {
-                let checkCount = 0;
-                const maxChecks = 10; // 3 seconds max
-
-                const checkStability = () => {
-                  checkCount++;
-                  const pendingImages = Array.from(document.images).filter(
-                    (img) => !img.complete || img.naturalWidth === 0,
-                  );
-
-                  if (pendingImages.length === 0 || checkCount >= maxChecks) {
-                    setTimeout(resolve, 300);
-                  } else {
-                    setTimeout(checkStability, 300);
-                  }
-                };
-
-                setTimeout(checkStability, 200);
-              });
-            });
-
-            // Take screenshot with single retry
-            try {
-              console.log(formatPairLog(pairId, type, "Taking screenshot..."));
-              await page.screenshot({
-                path: imagePath,
-                fullPage: true,
-                timeout: 30000,
-              });
-              console.log(
-                formatPairLog(pairId, type, "Screenshot completed! ✨"),
-              );
-            } catch (error) {
-              console.log(
-                formatPairLog(
-                  pairId,
-                  "error",
-                  `Screenshot failed, retrying...`,
-                ),
-              );
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              await page.evaluate(() => window.scrollTo(0, 0));
-              await page.screenshot({
-                path: imagePath,
-                fullPage: true,
-                timeout: 30000,
-              });
-              console.log(
-                formatPairLog(
-                  pairId,
-                  type,
-                  "Screenshot completed on retry! ✨",
-                ),
-              );
-            }
-          };
-
-          // Process both URLs sequentially for stability
-          const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
-          const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
-
+        // Take screenshot with single retry
+        try {
+          console.log(formatPairLog(pairId, type, "Taking screenshot..."));
+          await page.screenshot({
+            path: imagePath,
+            fullPage: true,
+            timeout: 30000,
+          });
           console.log(
-            formatPairLog(
-              pairId,
-              "diff",
-              "Processing URLs sequentially for stability...",
-            ),
+            formatPairLog(pairId, type, "Screenshot completed! ✨"),
           );
-
-          // Process before URL first
-          await processPage(pair.before, beforePath, "before");
-
-          // Process after URL second
-          await processPage(pair.after, afterPath, "after");
-
-          await page.close();
-
-          // Generate diff with progress indication
-          console.log(
-            formatPairLog(pairId, "diff", "Generating difference image..."),
-          );
-          const diffPath = path.join(diffsDir, `${pairId}-diff.png`);
-          const diffResult = await generateDiff(
-            beforePath,
-            afterPath,
-            diffPath,
-          );
-
-          const diffStatus = diffResult.diffPercentage === "0.00"
-            ? `No differences found! 🎉`
-            : `${diffResult.diffPercentage}% difference (${diffResult.pixelDiff.toLocaleString()} pixels)`;
-          console.log(formatPairLog(pairId, "success", diffStatus));
-
-          // Update overall progress
-          overallProgress.update(pairIndex + 1, `Completed ${pairId}`);
-
-          return {
-            id: pairId,
-            beforeUrl: pair.before,
-            afterUrl: pair.after,
-            beforeImage: path.relative(outputDir, beforePath),
-            afterImage: path.relative(outputDir, afterPath),
-            diffImage: path.relative(outputDir, diffPath),
-            pixelDiff: diffResult.pixelDiff,
-            diffPercentage: diffResult.diffPercentage,
-          };
         } catch (error) {
           console.log(
             formatPairLog(
               pairId,
               "error",
-              `Processing failed: ${error.message}`,
+              `Screenshot failed, retrying...`,
             ),
           );
-          overallProgress.update(pairIndex + 1, `Failed ${pairId}`);
-          return {
-            id: pairId,
-            beforeUrl: pair.before,
-            afterUrl: pair.after,
-            error: error.message,
-          };
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.screenshot({
+            path: imagePath,
+            fullPage: true,
+            timeout: 30000,
+          });
+          console.log(
+            formatPairLog(
+              pairId,
+              type,
+              "Screenshot completed on retry! ✨",
+            ),
+          );
         }
-      }),
-    );
-    results.push(...batchResults);
+      };
+
+      // Process both URLs sequentially for stability
+      const beforePath = path.join(screenshotsDir, `${pairId}-before.png`);
+      const afterPath = path.join(screenshotsDir, `${pairId}-after.png`);
+
+      console.log(
+        formatPairLog(
+          pairId,
+          "diff",
+          "Processing URLs sequentially for stability...",
+        ),
+      );
+
+      // Process before URL first
+      await processPage(pair.before, beforePath, "before");
+
+      // Process after URL second
+      await processPage(pair.after, afterPath, "after");
+
+      await page.close();
+
+      // Generate diff with progress indication
+      console.log(
+        formatPairLog(pairId, "diff", "Generating difference image..."),
+      );
+      const diffPath = path.join(diffsDir, `${pairId}-diff.png`);
+      const diffResult = await generateDiff(
+        beforePath,
+        afterPath,
+        diffPath,
+      );
+
+      const diffStatus = diffResult.diffPercentage === "0.00"
+        ? `No differences found! 🎉`
+        : `${diffResult.diffPercentage}% difference (${diffResult.pixelDiff.toLocaleString()} pixels)`;
+      console.log(formatPairLog(pairId, "success", diffStatus));
+
+      // Update overall progress
+      overallProgress.update(i + 1, `Completed ${pairId}`);
+
+      results.push({
+        id: pairId,
+        beforeUrl: pair.before,
+        afterUrl: pair.after,
+        beforeImage: path.relative(outputDir, beforePath),
+        afterImage: path.relative(outputDir, afterPath),
+        diffImage: path.relative(outputDir, diffPath),
+        pixelDiff: diffResult.pixelDiff,
+        diffPercentage: diffResult.diffPercentage,
+      });
+    } catch (error) {
+      console.log(
+        formatPairLog(
+          pairId,
+          "error",
+          `Processing failed: ${error.message}`,
+        ),
+      );
+      overallProgress.update(i + 1, `Failed ${pairId}`);
+      results.push({
+        id: pairId,
+        beforeUrl: pair.before,
+        afterUrl: pair.after,
+        error: error.message,
+      });
+    }
   }
 
   await browser.close();

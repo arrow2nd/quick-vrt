@@ -15,6 +15,8 @@ Quick Visual Regression Testing tool for web pages
 - 🎬 Advanced video masking (Canvas, WebGL, video players)
 - 🛑 Comprehensive animation blocking
 - 🔄 Optimized lazy loading with timeout controls
+- 🖥️ **Interactive TUI for easy URL configuration**
+- 🔧 **Improved stability with sequential processing**
 
 ## Installation
 
@@ -27,6 +29,18 @@ npx quick-vrt <urls...>
 ```
 
 ## Usage
+
+### Interactive TUI Mode (Recommended)
+```bash
+# Launch interactive URL selection
+quick-vrt tui
+```
+
+The TUI (Terminal User Interface) mode provides an interactive way to configure URL pairs:
+- Enter URLs with visual feedback and cursor positioning
+- Add multiple URL pairs with Tab key
+- Confirm settings before execution
+- ESC to exit at any time
 
 ### Basic comparison (2 URLs)
 ```bash
@@ -72,6 +86,25 @@ The generated HTML report includes:
 - **Statistics**: Diff percentage and pixel count
 - **Summary**: Overview of all comparisons
 
+## Available Commands
+
+### Interactive TUI Mode
+```bash
+quick-vrt tui [options]
+```
+
+### Open Report Viewer
+```bash
+# Open most recent report
+quick-vrt open
+
+# Open specific report
+quick-vrt open ./vrt-results
+
+# List available reports
+quick-vrt open --list
+```
+
 ## Advanced Features
 
 ### User-Agent Spoofing
@@ -92,9 +125,8 @@ quick-vrt https://example.com https://staging.example.com \
   --scroll-delay 200 \
   --no-lazy-loading
 
-# High concurrency for multiple comparisons
-quick-vrt url1 url2 url3 url4 url5 url6 \
-  --concurrency 8
+# Sequential processing for improved stability (default behavior)
+quick-vrt url1 url2 url3 url4 url5 url6
 ```
 
 ### Video and Animation Control
