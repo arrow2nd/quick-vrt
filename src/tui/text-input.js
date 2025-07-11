@@ -26,16 +26,6 @@ const CustomTextInput = ({
     }
   };
 
-  if (!TextInputComponent) {
-    // TextInputComponentが利用できない場合のフォールバック（静的表示）
-    return React.createElement("span", {
-      style: {
-        color: focus ? color : "gray",
-        textDecoration: focus ? "underline" : "none",
-      },
-    }, internalValue || `[${placeholder}]`);
-  }
-
   return React.createElement(TextInputComponent, {
     value: internalValue,
     onChange: handleChange,
@@ -52,4 +42,3 @@ const CustomTextInput = ({
 };
 
 module.exports = { CustomTextInput };
-

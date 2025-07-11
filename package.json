@@ -1,6 +1,6 @@
 {
   "name": "quick-vrt",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Quick Visual Regression Testing tool with interactive TUI for web pages",
   "main": "index.js",
   "bin": {

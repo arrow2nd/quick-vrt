@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "quick-vrt": "file:../quick-vrt-1.6.0.tgz"
+  }
+}
