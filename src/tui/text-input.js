@@ -4,14 +4,14 @@ const React = require("react");
 const { useState, useEffect } = React;
 
 // カスタムテキスト入力コンポーネント
-const CustomTextInput = ({ 
-  value, 
-  onChange, 
-  placeholder = "", 
+const CustomTextInput = ({
+  value,
+  onChange,
+  placeholder = "",
   focus = false,
   color = "green",
   TextInputComponent,
-  onKeyPress
+  onKeyPress,
 }) => {
   const [internalValue, setInternalValue] = useState(value || "");
 
@@ -26,28 +26,13 @@ const CustomTextInput = ({
     }
   };
 
-  const handleKeyPress = (input, key) => {
-    // TUI特有のキーイベントを親に伝える
-    if (onKeyPress) {
-      // Ctrl+D, Tab, 矢印キーなどをチェック
-      if ((key.ctrl && input === "d") || 
-          key.tab || 
-          key.upArrow || 
-          key.downArrow || 
-          key.escape) {
-        onKeyPress(input, key);
-        return;
-      }
-    }
-  };
-
   if (!TextInputComponent) {
     // TextInputComponentが利用できない場合のフォールバック（静的表示）
     return React.createElement("span", {
-      style: { 
+      style: {
         color: focus ? color : "gray",
-        textDecoration: focus ? "underline" : "none"
-      }
+        textDecoration: focus ? "underline" : "none",
+      },
     }, internalValue || `[${placeholder}]`);
   }
 
@@ -57,13 +42,14 @@ const CustomTextInput = ({
     placeholder,
     focus,
     showCursor: focus,
-    onSubmit: (value) => {
+    onSubmit: () => {
       // Enterキーが押されたときの処理
       if (onKeyPress) {
-        onKeyPress('', { return: true });
+        onKeyPress("", { return: true });
       }
-    }
+    },
   });
 };
 
 module.exports = { CustomTextInput };
+

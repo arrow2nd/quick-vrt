@@ -34,12 +34,12 @@ const VrtTui = ({ onSubmit, useInput, useApp, Box, Text, TextInputComponent }) =
       .catch(() => setHistoryItems([]));
   }, []);
 
-  const menuItems = ["新規入力", "履歴から選択", "終了"];
+  const menuItems = ["New Input", "Select from History", "Exit"];
   const optionItems = [
-    { key: "width", label: "画面幅", type: "number" },
-    { key: "height", label: "画面高さ", type: "number" },
-    { key: "threshold", label: "しきい値", type: "number" },
-    { key: "outputDir", label: "出力ディレクトリ", type: "string" },
+    { key: "width", label: "Width", type: "number" },
+    { key: "height", label: "Height", type: "number" },
+    { key: "threshold", label: "Threshold", type: "number" },
+    { key: "outputDir", label: "Output Dir", type: "string" },
   ];
 
   // 状態更新のヘルパー関数

@@ -15,7 +15,7 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginBottom: 1 },
-        React.createElement(Text, { bold: true }, "メインメニュー"),
+        React.createElement(Text, { bold: true }, "Main Menu"),
       ),
       menuItems.map((item, index) =>
         React.createElement(
@@ -26,8 +26,8 @@ const UIComponents = {
             { color: menuSelection === index ? "green" : "white" },
             menuSelection === index ? "▶ " : "  ",
             item,
-            item === "履歴から選択" && historyItems.length === 0 &&
-              " (履歴なし)",
+            item === "Select from History" && historyItems.length === 0 &&
+              " (No history)",
           ),
         )
       ),
@@ -44,7 +44,7 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginBottom: 1 },
-        React.createElement(Text, { bold: true }, "履歴から選択"),
+        React.createElement(Text, { bold: true }, "Select from History"),
       ),
       React.createElement(
         Box,
@@ -52,7 +52,7 @@ const UIComponents = {
         React.createElement(
           Text,
           { dimColor: true },
-          "操作: ↑↓=選択, Enter=決定, Ctrl+D=削除, ESC=戻る",
+          "Keys: ↑↓=Select, Enter=Choose, Ctrl+D=Delete, ESC=Back",
         ),
       ),
       historyItems.map((item, index) =>
@@ -91,7 +91,7 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginBottom: 1 },
-        React.createElement(Text, null, "URLペアを入力してください"),
+        React.createElement(Text, null, "Enter URL pairs"),
       ),
       React.createElement(
         Box,
@@ -99,7 +99,7 @@ const UIComponents = {
         React.createElement(
           Text,
           { dimColor: true },
-          "操作: Enter=次のフィールド, Tab=新しいペア追加, ↑↓=ペア移動, Delete=ペア削除(空欄時), ESC=メニューへ",
+          "Keys: Enter=Next field, Tab=Add pair, ↑↓=Move pair, Delete=Remove pair (when empty), ESC=Menu",
         ),
       ),
       urlPairs.map((pair, index) =>
@@ -112,7 +112,7 @@ const UIComponents = {
             React.createElement(
               Text,
               { bold: true, color: "cyan" },
-              `ペア ${index + 1}:`,
+              `Pair ${index + 1}:`,
             ),
           ),
           React.createElement(
@@ -222,7 +222,7 @@ const UIComponents = {
         React.createElement(
           Text,
           { bold: true, color: "yellow" },
-          "オプション設定",
+          "Options",
         ),
       ),
       React.createElement(
@@ -231,7 +231,7 @@ const UIComponents = {
         React.createElement(
           Text,
           { dimColor: true },
-          "操作: ↑↓=選択, Enter=編集, S=実行へ進む, ESC=戻る",
+          "Keys: ↑↓=Select, Enter=Edit, S=Start execution, ESC=Back",
         ),
       ),
       optionItems.map((item, index) =>
@@ -277,7 +277,7 @@ const UIComponents = {
         React.createElement(
           Text,
           { dimColor: true },
-          "設定が完了したら 'S' キーを押して実行確認へ進んでください",
+          "Press 'S' key to proceed to execution confirmation",
         ),
       ),
       (() => {
@@ -289,7 +289,7 @@ const UIComponents = {
             React.createElement(
               Text,
               { color: "red" },
-              "⚠️  有効なURLペアがありません。入力画面に戻って入力してください。",
+              "⚠️  No valid URL pairs. Please go back to input screen.",
             ),
           );
         }
@@ -308,12 +308,12 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginBottom: 1 },
-        React.createElement(Text, { bold: true, color: "yellow" }, "実行確認"),
+        React.createElement(Text, { bold: true, color: "yellow" }, "Execution Confirmation"),
       ),
       React.createElement(
         Box,
         { marginBottom: 1 },
-        React.createElement(Text, { bold: true }, "URLペア:"),
+        React.createElement(Text, { bold: true }, "URL Pairs:"),
       ),
       urlPairs.filter((pair) => pair.before && pair.after).map((pair, index) =>
         React.createElement(
@@ -322,7 +322,7 @@ const UIComponents = {
           React.createElement(
             Text,
             { bold: true, color: "cyan" },
-            `ペア ${index + 1}:`,
+            `Pair ${index + 1}:`,
           ),
           React.createElement(Text, null, `  Before: ${pair.before}`),
           React.createElement(Text, null, `  After:  ${pair.after}`),
@@ -331,7 +331,7 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginTop: 1, marginBottom: 1 },
-        React.createElement(Text, { bold: true }, "オプション:"),
+        React.createElement(Text, { bold: true }, "Options:"),
       ),
       optionItems.map((item) =>
         React.createElement(
@@ -347,7 +347,7 @@ const UIComponents = {
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Text, null, "この設定でVRTを実行しますか? (y/n): "),
+        React.createElement(Text, null, "Run VRT with these settings? (y/n): "),
       ),
     );
   }
