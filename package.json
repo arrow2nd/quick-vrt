@@ -1,7 +1,7 @@
 {
   "name": "quick-vrt",
-  "version": "1.5.0",
-  "description": "Quick Visual Regression Testing tool for web pages",
+  "version": "1.6.0",
+  "description": "Quick Visual Regression Testing tool with interactive TUI for web pages",
   "main": "index.js",
   "bin": {
     "quick-vrt": "./index.js"
@@ -14,7 +14,11 @@
     "visual-regression-testing",
     "puppeteer",
     "screenshot",
-    "diff"
+    "diff",
+    "tui",
+    "interactive",
+    "cli",
+    "testing"
   ],
   "author": "arrow2nd",
   "license": "MIT",

@@ -1,6 +1,6 @@
 # quick-vrt
 
-Quick Visual Regression Testing tool for web pages
+Quick Visual Regression Testing tool with interactive TUI for web pages
 
 ## Features
 
@@ -31,28 +31,37 @@ npx quick-vrt <urls...>
 ## Usage
 
 ### Interactive TUI Mode (Recommended)
+
 ```bash
 # Launch interactive URL selection
 quick-vrt tui
 ```
 
-The TUI (Terminal User Interface) mode provides an interactive way to configure URL pairs:
-- Enter URLs with visual feedback and cursor positioning
-- Add multiple URL pairs with Tab key
-- Confirm settings before execution
-- ESC to exit at any time
+The TUI (Terminal User Interface) mode provides an interactive way to configure
+URL pairs:
+
+- **Intuitive navigation**: Enter URLs with visual feedback and cursor
+  positioning
+- **Quick pair management**: Add multiple URL pairs with Tab key, delete with
+  Delete key (when empty)
+- **History support**: Access previously used URL pairs from history
+- **Flexible options**: Configure settings before execution
+- **Easy controls**: ESC to navigate back, simple keyboard shortcuts
 
 ### Basic comparison (2 URLs)
+
 ```bash
 quick-vrt https://example.com https://staging.example.com
 ```
 
 ### Multiple comparisons
+
 ```bash
 quick-vrt https://site1.com https://site2.com https://page1.com https://page2.com
 ```
 
 ### With options
+
 ```bash
 quick-vrt https://example.com https://staging.example.com \
   --output ./my-vrt-results \
@@ -89,11 +98,13 @@ The generated HTML report includes:
 ## Available Commands
 
 ### Interactive TUI Mode
+
 ```bash
 quick-vrt tui [options]
 ```
 
 ### Open Report Viewer
+
 ```bash
 # Open most recent report
 quick-vrt open
@@ -108,6 +119,7 @@ quick-vrt open --list
 ## Advanced Features
 
 ### User-Agent Spoofing
+
 ```bash
 # Mobile testing
 quick-vrt https://example.com https://staging.example.com \
@@ -119,6 +131,7 @@ quick-vrt https://example.com https://staging.example.com \
 ```
 
 ### Performance Optimization
+
 ```bash
 # Faster execution for simple pages
 quick-vrt https://example.com https://staging.example.com \
@@ -130,6 +143,7 @@ quick-vrt url1 url2 url3 url4 url5 url6
 ```
 
 ### Video and Animation Control
+
 ```bash
 # Custom video masking
 quick-vrt https://example.com https://staging.example.com \
@@ -157,3 +171,4 @@ VRT completed! Report saved to: /path/to/vrt-results/report.html
 ## License
 
 MIT
+
