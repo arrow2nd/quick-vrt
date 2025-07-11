@@ -77,20 +77,29 @@ program
   .option("--no-open", "do not auto-open the report")
   .action(async (options) => {
     try {
-      const urlPairs = await startTui();
+      const tuiResult = await startTui();
 
-      if (urlPairs.length === 0) {
+      if (!tuiResult || !tuiResult.pairs || tuiResult.pairs.length === 0) {
         console.log("No URL pairs provided. Exiting.");
         process.exit(0);
       }
 
+      // Merge TUI options with command line options
+      const mergedOptions = {
+        ...options,
+        width: tuiResult.options.width || options.width,
+        height: tuiResult.options.height || options.height,
+        threshold: tuiResult.options.threshold || options.threshold,
+        output: tuiResult.options.outputDir || options.output,
+      };
+
       // Convert to the format expected by runVRT
-      const pairs = urlPairs.map((pair) => ({
+      const pairs = tuiResult.pairs.map((pair) => ({
         before: pair.before,
         after: pair.after,
       }));
 
-      await runVRT(pairs, options);
+      await runVRT(pairs, mergedOptions);
     } catch (error) {
       console.error("Error running TUI:", error.message);
       process.exit(1);
@@ -1090,6 +1099,7 @@ async function runVRT(urlPairs, options) {
         diffImage: path.relative(outputDir, diffPath),
         pixelDiff: diffResult.pixelDiff,
         diffPercentage: diffResult.diffPercentage,
+        sizeWarning: diffResult.sizeWarning,
       });
     } catch (error) {
       console.log(
@@ -1129,12 +1139,48 @@ async function generateDiff(beforePath, afterPath, diffPath) {
   const beforeImg = PNG.sync.read(await fs.readFile(beforePath));
   const afterImg = PNG.sync.read(await fs.readFile(afterPath));
 
-  const { width, height } = beforeImg;
+  let { width, height } = beforeImg;
+  let resizedAfterImg = afterImg;
+  let sizeWarning = null;
+
+  // Check if image sizes are different
+  if (beforeImg.width !== afterImg.width || beforeImg.height !== afterImg.height) {
+    sizeWarning = `Image size mismatch: Before(${beforeImg.width}×${beforeImg.height}) vs After(${afterImg.width}×${afterImg.height})`;
+    console.warn(`⚠️  ${sizeWarning}`);
+    
+    // Resize the after image to match the before image
+    const sharp = require('sharp');
+    try {
+      const resizedBuffer = await sharp(await fs.readFile(afterPath))
+        .resize(beforeImg.width, beforeImg.height, { fit: 'fill' })
+        .png()
+        .toBuffer();
+      resizedAfterImg = PNG.sync.read(resizedBuffer);
+    } catch (error) {
+      console.error('Failed to resize image with sharp, using original size:', error.message);
+      // Use the larger dimensions to avoid array bounds issues
+      width = Math.max(beforeImg.width, afterImg.width);
+      height = Math.max(beforeImg.height, afterImg.height);
+      
+      // Pad images to match the larger size
+      const paddedBefore = new PNG({ width, height });
+      const paddedAfter = new PNG({ width, height });
+      
+      PNG.bitblt(beforeImg, paddedBefore, 0, 0, beforeImg.width, beforeImg.height, 0, 0);
+      PNG.bitblt(afterImg, paddedAfter, 0, 0, afterImg.width, afterImg.height, 0, 0);
+      
+      resizedAfterImg = paddedAfter;
+      beforeImg.width = width;
+      beforeImg.height = height;
+      beforeImg.data = paddedBefore.data;
+    }
+  }
+
   const diff = new PNG({ width, height });
 
   const pixelDiff = pixelmatch(
     beforeImg.data,
-    afterImg.data,
+    resizedAfterImg.data,
     diff.data,
     width,
     height,
@@ -1146,7 +1192,7 @@ async function generateDiff(beforePath, afterPath, diffPath) {
   const totalPixels = width * height;
   const diffPercentage = ((pixelDiff / totalPixels) * 100).toFixed(2);
 
-  return { pixelDiff, diffPercentage };
+  return { pixelDiff, diffPercentage, sizeWarning };
 }
 
 async function generateReport(results, outputDir) {
@@ -1444,6 +1490,7 @@ async function generateReport(results, outputDir) {
                         <div class="stat">
                             <strong>${result.pixelDiff.toLocaleString()}</strong> pixels changed
                         </div>
+                        ${result.sizeWarning ? `<div class="stat warning">⚠️ ${result.sizeWarning}</div>` : ''}
                     </div>
                 </div>
                 <div class="comparison-content">

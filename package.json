@@ -1,6 +1,6 @@
 {
   "name": "quick-vrt",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Quick Visual Regression Testing tool for web pages",
   "main": "index.js",
   "bin": {
@@ -29,12 +29,14 @@
   "dependencies": {
     "clipboardy": "^3.0.0",
     "commander": "^11.1.0",
-    "ink": "^4.4.1",
+    "ink": "^6.0.1",
+    "ink-text-input": "^6.0.0",
     "open": "^9.1.0",
     "pixelmatch": "^5.3.0",
     "pngjs": "^7.0.0",
-    "puppeteer": "^24.10.0",
-    "react": "^18.2.0"
+    "puppeteer": "^24.12.1",
+    "react": "^19.1.0",
+    "sharp": "^0.34.3"
   },
   "engines": {
     "node": ">=16.0.0"

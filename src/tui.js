@@ -1,126 +1,148 @@
 #!/usr/bin/env node
 
 const React = require("react");
-const { useState } = React;
-const clipboardy = require("clipboardy");
+const { useState, useEffect } = React;
+const { HistoryManager } = require("./history");
+const { KeyHandlers } = require("./tui/key-handlers");
+const { UIComponents } = require("./tui/ui-components");
 
-// TUIコンポーネント
-const VrtTui = ({ onSubmit, useInput, useApp, Box, Text }) => {
+const VrtTui = ({ onSubmit, useInput, useApp, Box, Text, TextInputComponent }) => {
   const [urlPairs, setUrlPairs] = useState([{ before: "", after: "" }]);
   const [currentPair, setCurrentPair] = useState(0);
-  const [currentField, setCurrentField] = useState("before"); // 'before' or 'after'
-  const [mode, setMode] = useState("input"); // 'input' or 'confirm'
+  const [currentField, setCurrentField] = useState("before");
+  const [mode, setMode] = useState("menu");
+  const [menuSelection, setMenuSelection] = useState(0);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historySelection, setHistorySelection] = useState(0);
+  const [options, setOptions] = useState({
+    width: 1280,
+    height: 800,
+    threshold: 0.01,
+    outputDir: "./vrt-reports",
+  });
+  const [optionSelection, setOptionSelection] = useState(0);
+  const [editingOption, setEditingOption] = useState(false);
+  const [tempOptionValue, setTempOptionValue] = useState("");
+
   const { exit } = useApp();
+  const historyManager = new HistoryManager();
+
+  // 履歴の読み込み
+  useEffect(() => {
+    historyManager.getFormattedHistory()
+      .then((items) => setHistoryItems(items))
+      .catch(() => setHistoryItems([]));
+  }, []);
+
+  const menuItems = ["新規入力", "履歴から選択", "終了"];
+  const optionItems = [
+    { key: "width", label: "画面幅", type: "number" },
+    { key: "height", label: "画面高さ", type: "number" },
+    { key: "threshold", label: "しきい値", type: "number" },
+    { key: "outputDir", label: "出力ディレクトリ", type: "string" },
+  ];
+
+  // 状態更新のヘルパー関数
+  const updateState = (updates) => {
+    if (updates.urlPairs !== undefined) setUrlPairs(updates.urlPairs);
+    if (updates.currentPair !== undefined) setCurrentPair(updates.currentPair);
+    if (updates.currentField !== undefined) {
+      setCurrentField(updates.currentField);
+    }
+    if (updates.mode !== undefined) setMode(updates.mode);
+    if (updates.menuSelection !== undefined) {
+      setMenuSelection(updates.menuSelection);
+    }
+    if (updates.historyItems !== undefined) {
+      setHistoryItems(updates.historyItems);
+    }
+    if (updates.historySelection !== undefined) {
+      setHistorySelection(updates.historySelection);
+    }
+    if (updates.options !== undefined) setOptions(updates.options);
+    if (updates.optionSelection !== undefined) {
+      setOptionSelection(updates.optionSelection);
+    }
+    if (updates.editingOption !== undefined) {
+      setEditingOption(updates.editingOption);
+    }
+    if (updates.tempOptionValue !== undefined) {
+      setTempOptionValue(updates.tempOptionValue);
+    }
+  };
+
+  // 現在の状態オブジェクト
+  const currentState = {
+    urlPairs,
+    currentPair,
+    currentField,
+    mode,
+    menuSelection,
+    historyItems,
+    historySelection,
+    options,
+    optionSelection,
+    editingOption,
+    tempOptionValue,
+    menuItems,
+    optionItems,
+    historyManager,
+    onSubmit,
+    exit,
+  };
 
   useInput((input, key) => {
-    if (mode === "input") {
-      if (key.return) {
-        // Enterキーで次のフィールドに移動
-        if (currentField === "before") {
-          setCurrentField("after");
-        } else {
-          // 現在のペアのafterが入力されたら、次のペアに移動
-          if (currentPair < urlPairs.length - 1) {
-            setCurrentPair(currentPair + 1);
-            setCurrentField("before");
-          } else {
-            // 最後のペアなら確認モードに移行
-            setMode("confirm");
-          }
+    // すべてのキーイベントを統一的に処理
+    // Delete（ペア削除）- Beforeが空欄の場合のみ
+    if (mode === "input" && key.delete && currentField === "before") {
+      const currentPairData = urlPairs[currentPair];
+      if (urlPairs.length > 1 && (!currentPairData.before || currentPairData.before.trim() === "")) {
+        const newPairs = urlPairs.filter((_, index) => index !== currentPair);
+        const newState = { urlPairs: newPairs };
+        
+        if (currentPair >= newPairs.length) {
+          newState.currentPair = newPairs.length - 1;
         }
-      } else if (key.tab) {
-        // Tabキーで新しいペアを追加
-        setUrlPairs([...urlPairs, { before: "", after: "" }]);
-        setCurrentPair(urlPairs.length);
-        setCurrentField("before");
-      } else if (key.ctrl && input === "d") {
-        // Ctrl+D で現在のペアを削除
-        if (urlPairs.length > 1) {
-          const newPairs = urlPairs.filter((_, index) => index !== currentPair);
-          setUrlPairs(newPairs);
-
-          // 削除後のカーソル位置を調整
-          if (currentPair >= newPairs.length) {
-            setCurrentPair(newPairs.length - 1);
-          }
-
-          // 現在のペアが空の場合、before フィールドにリセット
-          if (
-            newPairs[currentPair] && !newPairs[currentPair].before &&
-            !newPairs[currentPair].after
-          ) {
-            setCurrentField("before");
-          }
+        
+        const targetPair = newState.currentPair || currentPair;
+        if (newPairs[targetPair] && 
+            !newPairs[targetPair].before &&
+            !newPairs[targetPair].after) {
+          newState.currentField = "before";
         }
-      } else if (
-        key.backspace || key.delete ||
-        (input && (input.charCodeAt(0) === 8 || input.charCodeAt(0) === 127))
-      ) {
-        // macOSのBackspace/DELキーで文字を削除
-        const newPairs = [...urlPairs];
-        const current = newPairs[currentPair];
-        if (current[currentField].length > 0) {
-          current[currentField] = current[currentField].slice(0, -1);
-          setUrlPairs(newPairs);
-        }
-      } else if (key.ctrl && input === "v") {
-        // Ctrl+V でクリップボードから貼り付け
-        try {
-          const clipboardContent = clipboardy.readSync();
-          if (clipboardContent) {
-            const newPairs = [...urlPairs];
-            // 改行で分割されている場合は最初の行のみ使用
-            const content = clipboardContent.split("\n")[0].trim();
-            newPairs[currentPair][currentField] += content;
-            setUrlPairs(newPairs);
-          }
-        } catch (error) {
-          // クリップボードアクセスに失敗した場合は無視
-        }
-      } else if (key.upArrow) {
-        // 上矢印キーで前のペアに移動
-        if (currentPair > 0) {
-          setCurrentPair(currentPair - 1);
-          setCurrentField("before");
-        }
-      } else if (key.downArrow) {
-        // 下矢印キーで次のペアに移動
-        if (currentPair < urlPairs.length - 1) {
-          setCurrentPair(currentPair + 1);
-          setCurrentField("before");
-        }
-      } else if (key.escape) {
-        // ESCキーで終了
-        exit();
-      } else if (
-        input && !key.ctrl && !key.alt && !key.meta && !key.backspace &&
-        !key.delete && !key.return && !key.tab && !key.upArrow &&
-        !key.downArrow && !key.escape
-      ) {
-        // 通常の文字入力
-        const inputCode = input.charCodeAt(0);
-        // 印刷可能文字のみを受け入れ（ASCII 32-126、制御文字を除外）
-        if (
-          inputCode >= 32 && inputCode <= 126 && inputCode !== 127 &&
-          inputCode !== 8
-        ) {
-          const newPairs = [...urlPairs];
-          newPairs[currentPair][currentField] += input;
-          setUrlPairs(newPairs);
-        }
+        
+        updateState(newState);
       }
-    } else if (mode === "confirm") {
-      if (key.return || input === "y") {
-        // Enterキーまたは'y'で実行
-        const validPairs = urlPairs.filter((pair) => pair.before && pair.after);
-        if (validPairs.length > 0) {
-          onSubmit(validPairs);
-          exit();
-        }
-      } else if (input === "n" || key.escape) {
-        // 'n'またはESCキーで戻る
-        setMode("input");
-      }
+      return;
+    }
+    
+    // Tab（新しいペア追加）
+    if (mode === "input" && key.tab) {
+      const newPairs = [...urlPairs, { before: "", after: "" }];
+      updateState({ 
+        urlPairs: newPairs,
+        currentPair: urlPairs.length,
+        currentField: "before"
+      });
+      return;
+    }
+
+    switch (mode) {
+      case "menu":
+        KeyHandlers.handleMenuMode(input, key, currentState, updateState);
+        break;
+      case "history":
+        KeyHandlers.handleHistoryMode(input, key, currentState, updateState);
+        break;
+      case "input":
+        KeyHandlers.handleInputMode(input, key, currentState, updateState);
+        break;
+      case "options":
+        KeyHandlers.handleOptionsMode(input, key, currentState, updateState);
+        break;
+      case "confirm":
+        KeyHandlers.handleConfirmMode(input, key, currentState, updateState);
+        break;
     }
   });
 
@@ -136,96 +158,15 @@ const VrtTui = ({ onSubmit, useInput, useApp, Box, Text }) => {
         "🔍 quick-vrt",
       ),
     ),
-    mode === "input" && React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(
-        Box,
-        { marginBottom: 1 },
-        React.createElement(Text, null, "URLペアを入力してください"),
-      ),
-      React.createElement(
-        Box,
-        { marginBottom: 1 },
-        React.createElement(
-          Text,
-          { dimColor: true },
-          "操作: Enter=次のフィールド, Tab=新しいペア追加, ↑↓=ペア移動, Ctrl+D=ペア削除, Ctrl+V=貼り付け, ESC=終了",
-        ),
-      ),
-      urlPairs.map((pair, index) =>
-        React.createElement(
-          Box,
-          { key: index, flexDirection: "column", marginBottom: 1 },
-          React.createElement(
-            Box,
-            null,
-            React.createElement(
-              Text,
-              { bold: true, color: "cyan" },
-              `ペア ${index + 1}:`,
-            ),
-          ),
-          React.createElement(
-            Box,
-            null,
-            React.createElement(
-              Text,
-              {
-                color: currentPair === index && currentField === "before"
-                  ? "green"
-                  : "gray",
-              },
-              `Before: ${pair.before}`,
-              currentPair === index && currentField === "before" &&
-                React.createElement(Text, { color: "green" }, "█"),
-            ),
-          ),
-          React.createElement(
-            Box,
-            null,
-            React.createElement(
-              Text,
-              {
-                color: currentPair === index && currentField === "after"
-                  ? "green"
-                  : "gray",
-              },
-              `After:  ${pair.after}`,
-              currentPair === index && currentField === "after" &&
-                React.createElement(Text, { color: "green" }, "█"),
-            ),
-          ),
-        )
-      ),
-    ),
-    mode === "confirm" && React.createElement(
-      Box,
-      { flexDirection: "column" },
-      React.createElement(
-        Box,
-        { marginBottom: 1 },
-        React.createElement(Text, { bold: true, color: "yellow" }, "設定確認"),
-      ),
-      urlPairs.filter((pair) => pair.before && pair.after).map((pair, index) =>
-        React.createElement(
-          Box,
-          { key: index, flexDirection: "column", marginBottom: 1 },
-          React.createElement(
-            Text,
-            { bold: true, color: "cyan" },
-            `ペア ${index + 1}:`,
-          ),
-          React.createElement(Text, null, `  Before: ${pair.before}`),
-          React.createElement(Text, null, `  After:  ${pair.after}`),
-        )
-      ),
-      React.createElement(
-        Box,
-        { marginTop: 1 },
-        React.createElement(Text, null, "この設定でVRTを実行しますか? (y/n): "),
-      ),
-    ),
+    mode === "menu" && UIComponents.renderMenu(currentState, React, Box, Text),
+    mode === "history" &&
+      UIComponents.renderHistory(currentState, React, Box, Text),
+    mode === "input" &&
+      UIComponents.renderInput(currentState, React, Box, Text, updateState, TextInputComponent),
+    mode === "options" &&
+      UIComponents.renderOptions(currentState, React, Box, Text, updateState, TextInputComponent),
+    mode === "confirm" &&
+      UIComponents.renderConfirm(currentState, React, Box, Text),
   );
 };
 
@@ -233,9 +174,18 @@ const VrtTui = ({ onSubmit, useInput, useApp, Box, Text }) => {
 const startTui = async () => {
   return new Promise(async (resolve) => {
     const { render, Box, Text, useInput, useApp } = await import("ink");
+    
+    // ink-text-inputを動的にインポート
+    let TextInputComponent = null;
+    try {
+      const { default: TextInput } = await import("ink-text-input");
+      TextInputComponent = TextInput;
+    } catch (error) {
+      console.warn("ink-text-input could not be loaded:", error.message);
+    }
 
-    const handleSubmit = (pairs) => {
-      resolve(pairs);
+    const handleSubmit = (pairs, options) => {
+      resolve({ pairs, options });
     };
 
     render(React.createElement(VrtTui, {
@@ -244,6 +194,7 @@ const startTui = async () => {
       useApp,
       Box,
       Text,
+      TextInputComponent,
     }));
   });
 };
